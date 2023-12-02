@@ -1,90 +1,106 @@
-//
-//  ContentView.swift
-//  Mandarate
-//
-//  Created by 김기원 on 2023/12/02.
-//
-
 import SwiftUI
-import CoreData
+
+struct TodoItem: Identifiable {
+    let id = UUID()
+    var title: String
+    var description: String
+    var isChecked: Bool?
+}
+
+
 
 struct ContentView: View {
-    @Environment(\.managedObjectContext) private var viewContext
-
-    @FetchRequest(
-        sortDescriptors: [NSSortDescriptor(keyPath: \Item.timestamp, ascending: true)],
-        animation: .default)
-    private var items: FetchedResults<Item>
+    @StateObject var realmManager = RealmManager()
+    @State private var selectedTodoItem: Task?
+    @State private var showBottomSheet = false
+    @State private var openTodoView = false
 
     var body: some View {
-        NavigationView {
+        NavigationStack {
             List {
-                ForEach(items) { item in
-                    NavigationLink {
-                        Text("Item at \(item.timestamp!, formatter: itemFormatter)")
-                    } label: {
-                        Text(item.timestamp!, formatter: itemFormatter)
+                ForEach(realmManager.tasks, id: \.id) { task in
+                    HStack {
+                        HStack {
+                            Image(systemName: task.completed ? "checkmark.circle.fill" : "checkmark.circle").onTapGesture {
+                                realmManager.updateTask(id: task.id, completed:task.completed ? false : true)
+                            }
+                            
+                            Text(task.title)
+                            Text(task.descriptions)
+                            Spacer()
+                        }
+                        .frame(maxWidth: .infinity)
+                        .contentShape(Rectangle())
+                    }.onTapGesture {
+                        self.selectedTodoItem = task
+                        self.showBottomSheet = true
                     }
                 }
-                .onDelete(perform: deleteItems)
+                .onDelete(perform: { indexSet in
+                        for index in indexSet {
+                            let task = realmManager.tasks[index]
+                            realmManager.deleteTask(id: task.id)
+                        }
+                    })
+                
             }
-            .toolbar {
-#if os(iOS)
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    EditButton()
-                }
-#endif
-                ToolbarItem {
-                    Button(action: addItem) {
-                        Label("Add Item", systemImage: "plus")
-                    }
-                }
+                .navigationTitle(getTodayDateString())
+                .navigationBarItems(trailing: Button(action: {
+                openTodoView = true
+            }) {
+                    Text("할 일 추가")
+                })
+                .sheet(isPresented: $openTodoView) {
+                    AddTodoView(isDismiss: $openTodoView).environmentObject(realmManager)
             }
-            Text("Select an item")
+                .sheet(item: $selectedTodoItem) { item in
+                BottomSheetView(todoItem: item)
+            }
+
         }
+
+        
     }
 
-    private func addItem() {
-        withAnimation {
-            let newItem = Item(context: viewContext)
-            newItem.timestamp = Date()
+}
 
-            do {
-                try viewContext.save()
-            } catch {
-                // Replace this implementation with code to handle the error appropriately.
-                // fatalError() causes the application to generate a crash log and terminate. You should not use this function in a shipping application, although it may be useful during development.
-                let nsError = error as NSError
-                fatalError("Unresolved error \(nsError), \(nsError.userInfo)")
+
+struct BottomSheetView: View {
+    var todoItem: Task
+    var body: some View {
+
+        NavigationStack {
+            VStack {
+                Text(todoItem.descriptions)
             }
+            .navigationTitle(todoItem.title)
+            .navigationBarTitle(todoItem.descriptions)
         }
-    }
-
-    private func deleteItems(offsets: IndexSet) {
-        withAnimation {
-            offsets.map { items[$0] }.forEach(viewContext.delete)
-
-            do {
-                try viewContext.save()
-            } catch {
-                // Replace this implementation with code to handle the error appropriately.
-                // fatalError() causes the application to generate a crash log and terminate. You should not use this function in a shipping application, although it may be useful during development.
-                let nsError = error as NSError
-                fatalError("Unresolved error \(nsError), \(nsError.userInfo)")
-            }
-        }
+        
     }
 }
 
-private let itemFormatter: DateFormatter = {
-    let formatter = DateFormatter()
-    formatter.dateStyle = .short
-    formatter.timeStyle = .medium
-    return formatter
-}()
+
+struct ListRowView: View {
+    var body: some View {
+        HStack {
+            Image(systemName: "checkmark.circle")
+            Text("This is the first item!")
+            Spacer()
+        }
+
+    }
+}
 
 struct ContentView_Previews: PreviewProvider {
     static var previews: some View {
-        ContentView().environment(\.managedObjectContext, PersistenceController.preview.container.viewContext)
+        ContentView()
     }
+}
+
+func getTodayDateString() -> String {
+    let currentDate = Date()
+    let formatter = DateFormatter()
+    formatter.dateFormat = "YYYY-MM-dd"
+    return formatter.string(from: currentDate)
 }
